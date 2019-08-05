@@ -11,6 +11,11 @@ import (
 	"github.com/google/uuid"
 )
 
+const (
+	remove = iota
+	add
+)
+
 type Graph interface {
 	AddEdge(src, dest *Vertex)
 	RemoveEdge(src, dest *Vertex)
@@ -20,39 +25,41 @@ type Graph interface {
 }
 
 type DirectedGraph struct {
-	adjacency map[*Vertex][]*Vertex
-	diff      map[*Vertex][]*Vertex // Trade off space for caching only what's changed for when we encode.
+	adjacency  map[Vertex][]*Vertex
+	addDiff    map[Vertex][]*Vertex
+	removeDiff []*Vertex
 }
 
 func NewDirectedGraph() *DirectedGraph {
 	return &DirectedGraph{
-		adjacency: make(map[*Vertex][]*Vertex),
-		diff:      make(map[*Vertex][]*Vertex),
+		adjacency:  make(map[Vertex][]*Vertex),
+		addDiff:    make(map[Vertex][]*Vertex),
+		removeDiff: make([]*Vertex, 0),
 	}
 }
 
 func (g *DirectedGraph) AddEdge(src, dest *Vertex) {
-	for _, destV := range g.adjacency[src] {
+	for _, destV := range g.adjacency[*src] {
 		if destV.id == dest.id {
 			return
 		}
 	}
 
-	g.adjacency[src] = append(g.adjacency[src], dest)
-	g.diff[src] = append(g.diff[src], dest)
+	g.adjacency[*src] = append(g.adjacency[*src], dest)
+	g.addDiff[*src] = append(g.addDiff[*src], dest)
 }
 
 func (g *DirectedGraph) RemoveEdge(src, dest *Vertex) {
-	for idx, destVertex := range g.adjacency[src] {
+	for idx, destVertex := range g.adjacency[*src] {
 		if destVertex.id == dest.id {
-			g.adjacency[src] = append(g.adjacency[src][:idx], g.adjacency[src][idx+1:]...)
-			g.diff[src] = append(g.diff[src][:idx], g.diff[src][idx+1:]...)
+			g.adjacency[*src] = append(g.adjacency[*src][:idx], g.adjacency[*src][idx+1:]...)
 		}
 	}
 
-	if len(g.adjacency[src]) == 0 {
-		delete(g.adjacency, src)
-		delete(g.diff, src)
+	g.addDiff[*src] = g.adjacency[*src]
+	if len(g.adjacency[*src]) == 0 {
+		delete(g.adjacency, *src)
+		g.removeDiff = append(g.removeDiff, src)
 	}
 }
 
@@ -75,10 +82,10 @@ func (g *DirectedGraph) String() string {
 func (g *DirectedGraph) MarshalBinary() ([]byte, error) {
 	var b bytes.Buffer
 	delim := " "
-	log.Printf("Encoding %d source vertices", len(g.diff))
-	for vertex, vertices := range g.diff {
+	log.Printf("Encoding %d source vertices to add", len(g.addDiff))
+	for vertex, vertices := range g.addDiff {
 		log.Printf("Encoding %d destination vertices", len(vertices))
-		fmt.Fprint(&b, vertex.data, delim, vertex.id.String(), delim, len(vertices), delim)
+		fmt.Fprint(&b, add, delim, vertex.data, delim, vertex.id.String(), delim, len(vertices), delim)
 		for _, v := range vertices {
 			fmt.Fprint(&b, v.data, delim, v.id.String(), delim)
 		}
@@ -86,21 +93,31 @@ func (g *DirectedGraph) MarshalBinary() ([]byte, error) {
 		fmt.Fprintln(&b)
 	}
 
-	g.diff = make(map[*Vertex][]*Vertex)
+	log.Printf("Encoding %d source vertices to remove", len(g.removeDiff))
+	for _, vertex := range g.removeDiff {
+		log.Printf("Encoding %d destination vertices", len(g.removeDiff))
+		fmt.Fprint(&b, remove, delim, vertex.data, delim, vertex.id.String(), delim, 0)
+		fmt.Fprintln(&b)
+	}
+
+	g.addDiff = make(map[Vertex][]*Vertex)
+	g.removeDiff = make([]*Vertex, 0)
 	return b.Bytes(), nil
 }
 
 func (g *DirectedGraph) UnmarshalBinary(data []byte) error {
 	defer func() {
-		g.diff = make(map[*Vertex][]*Vertex)
+		g.addDiff = make(map[Vertex][]*Vertex)
+		g.removeDiff = make([]*Vertex, 0)
 	}()
 
 	b := bytes.NewBuffer(data)
+	var op int
 	var srcVData int
 	var srcVID string
 	var destLen int
 	for {
-		_, err := fmt.Fscan(b, &srcVData, &srcVID, &destLen)
+		_, err := fmt.Fscan(b, &op, &srcVData, &srcVID, &destLen)
 		if err == io.EOF {
 			return nil
 		}
@@ -116,6 +133,11 @@ func (g *DirectedGraph) UnmarshalBinary(data []byte) error {
 		var destVData int
 		var destVID string
 		var destVertices []*Vertex
+		if op == remove {
+			delete(g.adjacency, *srcV)
+			continue
+		}
+
 		log.Printf("Decoding %d destination vertices", destLen)
 		for i := 0; i < destLen; i++ {
 			_, err = fmt.Fscan(b, &destVData, &destVID)
@@ -132,6 +154,6 @@ func (g *DirectedGraph) UnmarshalBinary(data []byte) error {
 			destVertices = append(destVertices, destV)
 		}
 
-		g.adjacency[srcV] = destVertices
+		g.adjacency[*srcV] = destVertices
 	}
 }
