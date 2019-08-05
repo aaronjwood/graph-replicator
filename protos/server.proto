@@ -1,0 +1,15 @@
+syntax = "proto3";
+
+package api;
+
+import "google/protobuf/empty.proto";
+import "client.proto";
+
+service GraphReplicator {
+    rpc ShowGraph(google.protobuf.Empty) returns (Response) {}
+    rpc SyncGraph(SyncRequest) returns (Response) {}
+}
+
+message Response {
+    string graph = 1;
+}
