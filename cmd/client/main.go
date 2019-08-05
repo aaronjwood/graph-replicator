@@ -24,7 +24,7 @@ var data = make([]*graph.Vertex, fill)
 // Setup a bunch of vertices that we can reuse to show off the differential syncing.
 func initData() {
 	for i := 0; i < fill; i++ {
-		data[i] = graph.NewVertex(rand.Intn(fill))
+		data[i] = graph.NewVertex(rand.Intn(100))
 	}
 }
 
@@ -56,7 +56,8 @@ func main() {
 	fmt.Println("Remote graph:")
 	fmt.Println(res.Graph)
 
-	syncs := 50
+	syncs := 20
+	start := time.Now()
 	for i := 0; i < syncs; i++ {
 		fillGraph(g)
 		fmt.Println("Syncing local graph to remote")
@@ -75,9 +76,10 @@ func main() {
 			log.Fatalf("Failed to sync graph: %s", err.Error())
 		}
 
-		fmt.Printf("Took %s\n", time.Since(start))
+		fmt.Printf("Took %s to sync changes\n", time.Since(start))
 	}
 
+	fmt.Printf("Took %s to sync all changes\n", time.Since(start))
 	res, err = client.ShowGraph(context.Background(), &empty.Empty{})
 	if err != nil {
 		log.Fatalf("Failed to show remote graph: %s", err.Error())
