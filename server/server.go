@@ -26,16 +26,17 @@ func New(g graph.Graph) *server {
 }
 
 func (s *server) ShowGraph(ctx context.Context, in *empty.Empty) (*api.Response, error) {
+	log.Println("Displaying graph")
 	return &api.Response{
 		Graph: s.graph.String(),
 	}, nil
 }
 
 func (s *server) SyncGraph(ctx context.Context, in *api.SyncRequest) (*api.Response, error) {
+	log.Println("Syncing graph")
 	b := bytes.NewBuffer(in.Graph)
-	dec := gob.NewDecoder(&b)
-	newG := graph.NewDirectedGraph()
-	err = dec.Decode(&newG)
+	dec := gob.NewDecoder(b)
+	err := dec.Decode(&s.graph)
 	if err != nil {
 		log.Fatalf("Failed to decode: %s", err.Error())
 	}
