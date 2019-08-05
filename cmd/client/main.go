@@ -1,18 +1,12 @@
 package main
 
 import (
-	"bytes"
-	"context"
-	"encoding/gob"
 	"fmt"
-	"graph-replicator/api"
+	"graph-replicator/client"
 	"graph-replicator/graph"
 	"log"
 	"math/rand"
 	"time"
-
-	"github.com/golang/protobuf/ptypes/empty"
-	"google.golang.org/grpc"
 )
 
 const (
@@ -38,40 +32,29 @@ func fillGraph(g graph.Graph) {
 
 func main() {
 	fmt.Println("Creating new graph")
-	g := graph.NewDirectedGraph()
 	initData()
-	fmt.Println("Connecting to remote graph")
-	conn, err := grpc.Dial("127.0.0.1:3000", grpc.WithInsecure())
+	g := graph.NewDirectedGraph()
+	client := client.New(g)
+	err := client.Connect()
+	defer client.Disconnect()
 	if err != nil {
 		log.Fatalf("Failed to connect: %s", err.Error())
 	}
 
-	defer conn.Close()
-	client := api.NewGraphReplicatorClient(conn)
-	res, err := client.ShowGraph(context.Background(), &empty.Empty{})
+	remoteGraph, err := client.RemoteGraph()
 	if err != nil {
-		log.Fatalf("Failed to show remote graph: %s", err.Error())
+		log.Fatalf("Failed to get remote graph: %s", err.Error())
 	}
 
 	fmt.Println("Remote graph:")
-	fmt.Println(res.Graph)
-
+	fmt.Println(remoteGraph)
 	syncs := 20
 	start := time.Now()
 	for i := 0; i < syncs; i++ {
 		fillGraph(g)
 		fmt.Println("Syncing local graph to remote")
-		var b bytes.Buffer
-		enc := gob.NewEncoder(&b)
-		err = enc.Encode(g)
-		if err != nil {
-			log.Fatalf("Failed to encode: %s", err.Error())
-		}
-
 		start := time.Now()
-		_, err = client.SyncGraph(context.Background(), &api.SyncRequest{
-			Graph: b.Bytes(),
-		})
+		err := client.SyncGraph()
 		if err != nil {
 			log.Fatalf("Failed to sync graph: %s", err.Error())
 		}
@@ -80,11 +63,11 @@ func main() {
 	}
 
 	fmt.Printf("Took %s to sync all changes\n", time.Since(start))
-	res, err = client.ShowGraph(context.Background(), &empty.Empty{})
+	remoteGraph, err = client.RemoteGraph()
 	if err != nil {
-		log.Fatalf("Failed to show remote graph: %s", err.Error())
+		log.Fatalf("Failed to get remote graph: %s", err.Error())
 	}
 
 	fmt.Println("Remote graph:")
-	fmt.Println(res.Graph)
+	fmt.Println(remoteGraph)
 }
