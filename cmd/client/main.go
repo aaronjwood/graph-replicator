@@ -46,6 +46,9 @@ func main() {
 		log.Fatalf("Failed to get remote graph: %s", err.Error())
 	}
 
+	fmt.Println("Local graph:")
+	fmt.Println(client.LocalGraph())
+
 	fmt.Println("Remote graph:")
 	fmt.Println(remoteGraph)
 	syncs := 20
@@ -62,11 +65,15 @@ func main() {
 		fmt.Printf("Took %s to sync changes\n", time.Since(start))
 	}
 
+	fmt.Println()
 	fmt.Printf("Took %s to sync all changes\n", time.Since(start))
 	remoteGraph, err = client.RemoteGraph()
 	if err != nil {
 		log.Fatalf("Failed to get remote graph: %s", err.Error())
 	}
+
+	fmt.Println("Local graph:")
+	fmt.Println(client.LocalGraph())
 
 	fmt.Println("Remote graph:")
 	fmt.Println(remoteGraph)

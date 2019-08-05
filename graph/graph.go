@@ -46,7 +46,7 @@ func (g *DirectedGraph) AddEdge(src, dest *Vertex) {
 	}
 
 	g.adjacency[*src] = append(g.adjacency[*src], dest)
-	g.addDiff[*src] = append(g.addDiff[*src], dest)
+	g.addDiff[*src] = g.adjacency[*src]
 }
 
 func (g *DirectedGraph) RemoveEdge(src, dest *Vertex) {
@@ -82,9 +82,7 @@ func (g *DirectedGraph) String() string {
 func (g *DirectedGraph) MarshalBinary() ([]byte, error) {
 	var b bytes.Buffer
 	delim := " "
-	log.Printf("Encoding %d source vertices to add", len(g.addDiff))
 	for vertex, vertices := range g.addDiff {
-		log.Printf("Encoding %d destination vertices", len(vertices))
 		fmt.Fprint(&b, add, delim, vertex.data, delim, vertex.id.String(), delim, len(vertices), delim)
 		for _, v := range vertices {
 			fmt.Fprint(&b, v.data, delim, v.id.String(), delim)
@@ -93,9 +91,7 @@ func (g *DirectedGraph) MarshalBinary() ([]byte, error) {
 		fmt.Fprintln(&b)
 	}
 
-	log.Printf("Encoding %d source vertices to remove", len(g.removeDiff))
 	for _, vertex := range g.removeDiff {
-		log.Printf("Encoding %d destination vertices", len(g.removeDiff))
 		fmt.Fprint(&b, remove, delim, vertex.data, delim, vertex.id.String(), delim, 0)
 		fmt.Fprintln(&b)
 	}
@@ -134,6 +130,7 @@ func (g *DirectedGraph) UnmarshalBinary(data []byte) error {
 		var destVID string
 		var destVertices []*Vertex
 		if op == remove {
+			log.Printf("Deleting vertex %s", srcVID)
 			delete(g.adjacency, *srcV)
 			continue
 		}
