@@ -5,14 +5,13 @@ import (
 	"encoding"
 	"fmt"
 	"io"
+	"log"
 	"strings"
 
 	"github.com/google/uuid"
 )
 
 type Graph interface {
-	AddVertex(v *Vertex)
-	RemoveVertex(v *Vertex)
 	AddEdge(src, dest *Vertex)
 	RemoveEdge(src, dest *Vertex)
 	fmt.Stringer
@@ -22,35 +21,38 @@ type Graph interface {
 
 type DirectedGraph struct {
 	adjacency map[*Vertex][]*Vertex
+	diff      map[*Vertex][]*Vertex // Trade off space for caching only what's changed for when we encode.
 }
 
 func NewDirectedGraph() *DirectedGraph {
 	return &DirectedGraph{
 		adjacency: make(map[*Vertex][]*Vertex),
+		diff:      make(map[*Vertex][]*Vertex),
 	}
 }
 
-func (g *DirectedGraph) AddVertex(v *Vertex) {
-	g.adjacency[v] = []*Vertex{}
-}
-
-func (g *DirectedGraph) RemoveVertex(v *Vertex) {
-	delete(g.adjacency, v)
-}
-
 func (g *DirectedGraph) AddEdge(src, dest *Vertex) {
+	for _, destV := range g.adjacency[src] {
+		if destV.id == dest.id {
+			return
+		}
+	}
+
 	g.adjacency[src] = append(g.adjacency[src], dest)
+	g.diff[src] = append(g.diff[src], dest)
 }
 
 func (g *DirectedGraph) RemoveEdge(src, dest *Vertex) {
 	for idx, destVertex := range g.adjacency[src] {
 		if destVertex.id == dest.id {
 			g.adjacency[src] = append(g.adjacency[src][:idx], g.adjacency[src][idx+1:]...)
+			g.diff[src] = append(g.diff[src][:idx], g.diff[src][idx+1:]...)
 		}
 	}
 
 	if len(g.adjacency[src]) == 0 {
 		delete(g.adjacency, src)
+		delete(g.diff, src)
 	}
 }
 
@@ -73,7 +75,9 @@ func (g *DirectedGraph) String() string {
 func (g *DirectedGraph) MarshalBinary() ([]byte, error) {
 	var b bytes.Buffer
 	delim := " "
-	for vertex, vertices := range g.adjacency {
+	log.Printf("Encoding %d source vertices", len(g.diff))
+	for vertex, vertices := range g.diff {
+		log.Printf("Encoding %d destination vertices", len(vertices))
 		fmt.Fprint(&b, vertex.data, delim, vertex.id.String(), delim, len(vertices), delim)
 		for _, v := range vertices {
 			fmt.Fprint(&b, v.data, delim, v.id.String(), delim)
@@ -82,10 +86,15 @@ func (g *DirectedGraph) MarshalBinary() ([]byte, error) {
 		fmt.Fprintln(&b)
 	}
 
+	g.diff = make(map[*Vertex][]*Vertex)
 	return b.Bytes(), nil
 }
 
 func (g *DirectedGraph) UnmarshalBinary(data []byte) error {
+	defer func() {
+		g.diff = make(map[*Vertex][]*Vertex)
+	}()
+
 	b := bytes.NewBuffer(data)
 	var srcVData int
 	var srcVID string
@@ -100,13 +109,14 @@ func (g *DirectedGraph) UnmarshalBinary(data []byte) error {
 			return err
 		}
 
+		log.Printf("Decoding vertex %s", srcVID)
 		srcV := NewVertex(srcVData)
 		srcV.id = uuid.MustParse(srcVID)
-		g.AddVertex(srcV)
 
 		var destVData int
 		var destVID string
 		var destVertices []*Vertex
+		log.Printf("Decoding %d destination vertices", destLen)
 		for i := 0; i < destLen; i++ {
 			_, err = fmt.Fscan(b, &destVData, &destVID)
 			if err == io.EOF {
@@ -123,6 +133,5 @@ func (g *DirectedGraph) UnmarshalBinary(data []byte) error {
 		}
 
 		g.adjacency[srcV] = destVertices
-
 	}
 }

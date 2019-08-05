@@ -8,41 +8,38 @@ import (
 	"graph-replicator/api"
 	"graph-replicator/graph"
 	"log"
+	"math/rand"
+	"time"
 
 	"github.com/golang/protobuf/ptypes/empty"
 	"google.golang.org/grpc"
 )
 
+const (
+	fill = 10
+)
+
+var data = make([]*graph.Vertex, fill)
+
+// Setup a bunch of vertices that we can reuse to show off the differential syncing.
+func initData() {
+	for i := 0; i < fill; i++ {
+		data[i] = graph.NewVertex(rand.Intn(fill))
+	}
+}
+
+// Add edges to the graph from the pool of vertices.
+// Randomly reuse vertices so that we can exercise the graph's ability to sync only diffs and not the entire graph.
+func fillGraph(g graph.Graph) {
+	for i := 0; i < fill; i++ {
+		g.AddEdge(data[rand.Intn(fill)], data[rand.Intn(fill)])
+	}
+}
+
 func main() {
 	fmt.Println("Creating new graph")
 	g := graph.NewDirectedGraph()
-
-	fmt.Println("Adding some edges to the graph")
-	v1 := graph.NewVertex(1)
-	v2 := graph.NewVertex(2)
-	v3 := graph.NewVertex(3)
-	v4 := graph.NewVertex(4)
-	v5 := graph.NewVertex(5)
-	g.AddEdge(v1, v2)
-	g.AddEdge(v1, v3)
-	g.AddEdge(v4, v5)
-
-	fmt.Println("Local graph:")
-	fmt.Println(g.String())
-
-	fmt.Println("Adding vertex with no connections to the graph")
-	v6 := graph.NewVertex(6)
-	g.AddVertex(v6)
-
-	fmt.Println("Local graph:")
-	fmt.Println(g.String())
-
-	fmt.Println("Removing an edge from the graph")
-	g.RemoveEdge(v1, v2)
-
-	fmt.Println("Local graph:")
-	fmt.Println(g.String())
-
+	initData()
 	fmt.Println("Connecting to remote graph")
 	conn, err := grpc.Dial("127.0.0.1:3000", grpc.WithInsecure())
 	if err != nil {
@@ -59,19 +56,26 @@ func main() {
 	fmt.Println("Remote graph:")
 	fmt.Println(res.Graph)
 
-	var b bytes.Buffer
-	enc := gob.NewEncoder(&b)
-	err = enc.Encode(g)
-	if err != nil {
-		log.Fatalf("Failed to encode: %s", err.Error())
-	}
+	syncs := 50
+	for i := 0; i < syncs; i++ {
+		fillGraph(g)
+		fmt.Println("Syncing local graph to remote")
+		var b bytes.Buffer
+		enc := gob.NewEncoder(&b)
+		err = enc.Encode(g)
+		if err != nil {
+			log.Fatalf("Failed to encode: %s", err.Error())
+		}
 
-	fmt.Println("Syncing local graph to remote")
-	_, err = client.SyncGraph(context.Background(), &api.SyncRequest{
-		Graph: b.Bytes(),
-	})
-	if err != nil {
-		log.Fatalf("Failed to sync graph: %s", err.Error())
+		start := time.Now()
+		_, err = client.SyncGraph(context.Background(), &api.SyncRequest{
+			Graph: b.Bytes(),
+		})
+		if err != nil {
+			log.Fatalf("Failed to sync graph: %s", err.Error())
+		}
+
+		fmt.Printf("Took %s\n", time.Since(start))
 	}
 
 	res, err = client.ShowGraph(context.Background(), &empty.Empty{})
