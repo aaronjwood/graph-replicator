@@ -30,3 +30,5 @@ When disabling the differential sync support on the on the graph execution times
 * Detecting changes to destination vertices is not optimized
 
 * No persistence (everything is always in memory regardless of how big the graph is)
+
+* Testing

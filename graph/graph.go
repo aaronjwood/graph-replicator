@@ -25,37 +25,30 @@ type Graph interface {
 }
 
 type DirectedGraph struct {
-	adjacency  map[Vertex][]*Vertex
-	addDiff    map[Vertex][]*Vertex
+	adjacency  map[Vertex]vertexSet
+	addDiff    map[Vertex]vertexSet
 	removeDiff []*Vertex
 }
 
 func NewDirectedGraph() *DirectedGraph {
 	return &DirectedGraph{
-		adjacency:  make(map[Vertex][]*Vertex),
-		addDiff:    make(map[Vertex][]*Vertex),
+		adjacency:  make(map[Vertex]vertexSet),
+		addDiff:    make(map[Vertex]vertexSet),
 		removeDiff: make([]*Vertex, 0),
 	}
 }
 
 func (g *DirectedGraph) AddEdge(src, dest *Vertex) {
-	for _, destV := range g.adjacency[*src] {
-		if destV.id == dest.id {
-			return
-		}
+	if g.adjacency[*src] == nil {
+		g.adjacency[*src] = make(vertexSet)
 	}
 
-	g.adjacency[*src] = append(g.adjacency[*src], dest)
+	g.adjacency[*src].Add(*dest)
 	g.addDiff[*src] = g.adjacency[*src]
 }
 
 func (g *DirectedGraph) RemoveEdge(src, dest *Vertex) {
-	for idx, destVertex := range g.adjacency[*src] {
-		if destVertex.id == dest.id {
-			g.adjacency[*src] = append(g.adjacency[*src][:idx], g.adjacency[*src][idx+1:]...)
-		}
-	}
-
+	g.adjacency[*src].Remove(*dest)
 	g.addDiff[*src] = g.adjacency[*src]
 	if len(g.adjacency[*src]) == 0 {
 		delete(g.adjacency, *src)
@@ -65,12 +58,12 @@ func (g *DirectedGraph) RemoveEdge(src, dest *Vertex) {
 
 func (g *DirectedGraph) String() string {
 	var builder strings.Builder
-	for src, destList := range g.adjacency {
+	for src, dest := range g.adjacency {
 		s := fmt.Sprintf("Source vertex: %d\n", src.data)
 		builder.WriteString(s)
 		builder.WriteString("\tDestination verticies: ")
-		for _, dest := range destList {
-			s := fmt.Sprintf("%d    ", dest.data)
+		for vertex := range dest {
+			s := fmt.Sprintf("%d    ", vertex.data)
 			builder.WriteString(s)
 		}
 		builder.WriteString("\n\n")
@@ -84,7 +77,7 @@ func (g *DirectedGraph) MarshalBinary() ([]byte, error) {
 	delim := " "
 	for vertex, vertices := range g.addDiff {
 		fmt.Fprint(&b, add, delim, vertex.data, delim, vertex.id.String(), delim, len(vertices), delim)
-		for _, v := range vertices {
+		for v := range vertices {
 			fmt.Fprint(&b, v.data, delim, v.id.String(), delim)
 		}
 
@@ -96,14 +89,14 @@ func (g *DirectedGraph) MarshalBinary() ([]byte, error) {
 		fmt.Fprintln(&b)
 	}
 
-	g.addDiff = make(map[Vertex][]*Vertex)
+	g.addDiff = make(map[Vertex]vertexSet)
 	g.removeDiff = make([]*Vertex, 0)
 	return b.Bytes(), nil
 }
 
 func (g *DirectedGraph) UnmarshalBinary(data []byte) error {
 	defer func() {
-		g.addDiff = make(map[Vertex][]*Vertex)
+		g.addDiff = make(map[Vertex]vertexSet)
 		g.removeDiff = make([]*Vertex, 0)
 	}()
 
@@ -128,7 +121,7 @@ func (g *DirectedGraph) UnmarshalBinary(data []byte) error {
 
 		var destVData int
 		var destVID string
-		var destVertices []*Vertex
+		destVertices := make(vertexSet)
 		if op == remove {
 			log.Printf("Deleting vertex %s", srcVID)
 			delete(g.adjacency, *srcV)
@@ -148,7 +141,7 @@ func (g *DirectedGraph) UnmarshalBinary(data []byte) error {
 
 			destV := NewVertex(destVData)
 			destV.id = uuid.MustParse(destVID)
-			destVertices = append(destVertices, destV)
+			destVertices.Add(*destV)
 		}
 
 		g.adjacency[*srcV] = destVertices
